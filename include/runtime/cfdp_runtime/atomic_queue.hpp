@@ -11,20 +11,20 @@ template <class T>
 class AtomicQueue
 {
   public:
+    explicit AtomicQueue() = default;
+
     T pop() noexcept;
     std::optional<T> tryPop() noexcept;
 
     void push(const T& item) noexcept;
-    void push(T&& item) noexcept;
+    void emplace(T&& item) noexcept;
 
-    [[nodiscard]] size_t sizeNow() const noexcept { return content.size(); };
+    [[nodiscard]] inline size_t sizeNow() const noexcept { return content.size(); };
 
   private:
     std::queue<T> content{};
     mutable std::mutex mutex{};
     mutable std::condition_variable notEmptyCond{};
-
-    void emplace(T&& item) noexcept;
 };
 } // namespace cfdp::runtime::atomic
 
@@ -53,19 +53,17 @@ std::optional<T> cfdp::runtime::atomic::AtomicQueue<T>::tryPop() noexcept
     auto item = content.front();
     content.pop();
 
-    return item;
+    return std::make_optional(item);
 }
 
 template <class T>
 void cfdp::runtime::atomic::AtomicQueue<T>::push(const T& item) noexcept
 {
-    emplace(item);
-}
-
-template <class T>
-void cfdp::runtime::atomic::AtomicQueue<T>::push(T&& item) noexcept
-{
-    emplace(std::move(item));
+    {
+        std::scoped_lock<std::mutex> lock{mutex};
+        content.push(item);
+    }
+    notEmptyCond.notify_one();
 }
 
 template <class T>
